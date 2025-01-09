@@ -1,0 +1,6 @@
+{
+  "name": "SAMPLEAPP",
+  "author": "DEVAPP",
+  "about": "Sample app to test marketplace functioning.",
+  "program": "alert('This application should work. I will make more tests to make progress on this.');"
+}
