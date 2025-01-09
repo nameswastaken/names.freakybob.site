@@ -1,0 +1,10 @@
+{
+  "storeicon": "default.png",
+  "storethumbnails": ["thumbnail1.png", "thumbnail2.png", "thumbnail3.png"],
+  "sysicon": "default.png", 
+  "storename": "SAMPLEAPP",
+  "name": "Sample", 
+  "author": "DEVAPP", 
+  "about": "Sample app to test marketplace functioning.", 
+  "program": "alert('2nd test.');" 
+}
