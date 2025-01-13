@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Greg's Awesome Code Editor 2</title>
+    <link rel="stylesheet" href="gace2.css">
+    <link rel="icon" href="logo.svg">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.40.0/min/vs/editor/editor.main.css" rel="stylesheet">
+</head>
+<body>
+    <div class="navigation">
+        <img src="logo.svg" alt="Logo">
+        <button id="filebutton" title="View options for this file.">File</button>
+        <button id="editbutton" title="Editing options for this file.">Edit</button>
+        <button id="viewbutton" title="Choose appearance settings.">View</button>
+        <button id="aboutbutton" title=":3">About</button>
+    </div>
+
+    <div class="main-container">
+        <div class="explorer" id="explorer">
+            <!-- File explorer soon -->
+        </div>
+        <div id="editor">
+            <div class="lc">
+                <span id="cursorPosition">Ln 1, Col 1</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="fileMenu" class="context-menu">
+        <div class="context-menu-item" id="openFolder">Open Folder</div>
+        <div class="context-menu-item" id="openFile">Open File</div>
+        <div class="context-menu-item" id="saveFile">Save</div>
+    </div>
+
+    <div id="editMenu" class="context-menu">
+        <div class="context-menu-item" id="undo">Undo</div>
+        <div class="context-menu-item" id="redo">Redo</div>
+        <div class="context-menu-item" id="cut">Cut</div>
+        <div class="context-menu-item" id="copy">Copy</div>
+        <div class="context-menu-item" id="paste">Paste</div>
+    </div>
+
+    <div id="viewMenu" class="context-menu">
+        <div class="context-menu-item" id="toggleFullscreen">Toggle Fullscreen</div>
+    </div>
+
+    <div id="aboutMenu" class="context-menu">
+        <div class="context-menu-item" id="aboutGACE">About GACE</div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.40.0/min/vs/loader.min.js"></script>
+    <script>
+require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.40.0/min/vs' } });
+
+require(['vs/editor/editor.main'], function () {
+    monaco.languages.register({ id: '4re' });
+
+    function setEditorTheme() {
+        const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const theme = isDarkMode ? 'vs-dark' : 'vs';
+        monaco.editor.setTheme(theme);
+    }
+
+    setEditorTheme();
+
+    window.matchMedia('(prefers-color-scheme: dark)').addListener(setEditorTheme);
+
+    const editor = monaco.editor.create(document.getElementById('editor'), {
+        language: 'html',
+        automaticLayout: true
+    });
+
+            let currentFileHandle = null;
+
+            function showContextMenu(menuId, button) {
+                const menu = document.getElementById(menuId);
+                const buttonRect = button.getBoundingClientRect();
+                const x = buttonRect.left; 
+                const y = buttonRect.bottom;
+                
+                menu.style.left = `${x}px`;
+                menu.style.top = `${y}px`;
+                menu.style.display = 'block';
+            }
+
+            function hideAllContextMenus() {
+                const menus = document.querySelectorAll('.context-menu');
+                menus.forEach(menu => {
+                    menu.style.display = 'none';
+                });
+            }
+
+            async function handleOpenFolder() {
+                const directoryHandle = await window.showDirectoryPicker();
+                const explorer = document.getElementById('explorer');
+                explorer.innerHTML = '';
+
+                async function readDirectory(handle, parentElement) {
+                    for await (const entry of handle.values()) {
+                        const entryElement = document.createElement('div');
+                        entryElement.textContent = entry.name;
+                        parentElement.appendChild(entryElement);
+
+                        if (entry.kind === 'directory') {
+                            entryElement.style.fontWeight = 'bold';
+                            const collapseButton = document.createElement('button');
+                            collapseButton.textContent = '+';
+                            collapseButton.style.marginRight = '5px';
+                            entryElement.insertBefore(collapseButton, entryElement.firstChild);
+                            const subList = document.createElement('div');
+                            subList.style.marginLeft = '20px';
+                            subList.style.display = 'none';
+                            entryElement.appendChild(subList);
+
+                            collapseButton.addEventListener('click', () => {
+                                const isCollapsed = subList.style.display === 'none';
+                                subList.style.display = isCollapsed ? 'block' : 'none';
+                                collapseButton.textContent = isCollapsed ? '-' : '+';
+                            });
+
+                            await readDirectory(entry, subList);
+                        } else if (entry.kind === 'file') {
+                            entryElement.addEventListener('click', async () => {
+                                if (/\.(html|css|js)$/.test(entry.name)) {
+                                    currentFileHandle = entry;
+                                    const fileHandle = await entry.getFile();
+                                    const fileContent = await fileHandle.text();
+                                    editor.setModel(monaco.editor.createModel(fileContent, entry.name.split('.').pop(), monaco.Uri.file(entry.name)));
+                                }
+                            });
+                        }
+                    }
+                }
+
+                await readDirectory(directoryHandle, explorer);
+                setAutoSave();
+            }
+
+            async function handleOpenFile() {
+                const [fileHandle] = await window.showOpenFilePicker({
+                    types: [
+                        {
+                            description: 'Web Files',
+                            accept: {
+                                'text/html': ['.html'],
+                                'text/css': ['.css'],
+                                'application/javascript': ['.js']
+                            }
+                        }
+                    ]
+                });
+
+                const file = await fileHandle.getFile();
+                const fileContent = await file.text();
+                currentFileHandle = fileHandle;
+                editor.setModel(monaco.editor.createModel(fileContent, file.name.split('.').pop(), monaco.Uri.file(file.name)));
+                setAutoSave();
+            }
+
+            async function handleSaveFile() {
+                if (currentFileHandle) {
+                    const writable = await currentFileHandle.createWritable();
+                    await writable.write(new Blob([editor.getValue()], { type: 'text/plain' }));
+                    await writable.close();
+                }
+            }
+            
+            function setAutoSave() {
+                setInterval(async () => {
+                    await handleSaveFile();
+                }, 2000);
+            }
+
+            document.getElementById('filebutton').addEventListener('click', function (event) {
+                hideAllContextMenus();
+                showContextMenu('fileMenu', event.target);
+            });
+
+            document.getElementById('editbutton').addEventListener('click', function (event) {
+                hideAllContextMenus();
+                showContextMenu('editMenu', event.target);
+            });
+
+            document.getElementById('viewbutton').addEventListener('click', function (event) {
+                hideAllContextMenus();
+                showContextMenu('viewMenu', event.target);
+            });
+
+            document.getElementById('aboutbutton').addEventListener('click', function (event) {
+                hideAllContextMenus();
+                showContextMenu('aboutMenu', event.target);
+            });
+
+            document.getElementById('openFolder').addEventListener('click', handleOpenFolder);
+            document.getElementById('openFile').addEventListener('click', handleOpenFile);
+            document.getElementById('saveFile').addEventListener('click', handleSaveFile);
+
+            document.getElementById('undo').addEventListener('click', () => editor.trigger('keyboard', 'undo'));
+            document.getElementById('redo').addEventListener('click', () => editor.trigger('keyboard', 'redo'));
+
+            document.getElementById('cut').addEventListener('click', async () => {
+                const selection = editor.getModel().getValueInRange(editor.getSelection());
+                await navigator.clipboard.writeText(selection);
+                editor.executeEdits('my-source', [{ range: editor.getSelection(), text: '' }]);
+            });
+
+            document.getElementById('copy').addEventListener('click', async () => {
+                const selection = editor.getModel().getValueInRange(editor.getSelection());
+                await navigator.clipboard.writeText(selection);
+            });
+
+            document.getElementById('paste').addEventListener('click', async () => {
+                const text = await navigator.clipboard.readText();
+                editor.executeEdits('my-source', [{ range: editor.getSelection(), text: text }]);
+            });
+
+            document.addEventListener('click', function (event) {
+                if (!event.target.closest('.navigation')) {
+                    hideAllContextMenus();
+                }
+            });
+
+            editor.onDidChangeCursorPosition(function (e) {
+                const position = editor.getPosition();
+                document.getElementById('cursorPosition').textContent = `Ln ${position.lineNumber}, Col ${position.column}`;
+            });
+        });
+
+        document.getElementById('viewMenu').addEventListener('click', function (event) {
+            if (event.target.textContent === 'Toggle Fullscreen') {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen();
+                } else {
+                    if (document.exitFullscreen) {
+                        document.exitFullscreen();
+                    }
+                }
+            }
+        });
+
+        document.getElementById('aboutMenu').addEventListener('click', function (event) {
+            if (event.target.textContent === 'About GACE') {
+                alert('Greg\'s Awesome Code Editor (GACE) version 2.0.\nSorry squirrel i took your code lmfao');
+            }
+        });
+    </script>
+</body>
+</html>
